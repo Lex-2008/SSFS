@@ -14,15 +14,15 @@ Usage
 
 * To generate a list of files:
 
-	find . -type f -printf "%s %P\n" >{list file}
+		find . -type f -printf "%s %P\n" >{list file}
 
 * To mount, from the same directory:
 
-	./catfs {list file} {mount point}
+		./catfs {list file} {mount point}
 
 * To unmount:
 
-	fusermount -u {mount point}
+		fusermount -u {mount point}
 
 Based on a SSFS by MaaSTaaR: <http://www.maastaar.net/fuse/linux/filesystem/c/2016/05/21/writing-a-simple-filesystem-using-fuse/>
 
