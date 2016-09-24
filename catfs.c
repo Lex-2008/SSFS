@@ -1,13 +1,3 @@
-/**
- * Simple & Stupid Filesystem.
- * 
- * Mohammed Q. Hussain - http://www.maastaar.net
- *
- * This is an example of using FUSE to build a simple filesystem. It is a part of a tutorial in MQH Blog with the title "Writing a Simple Filesystem Using FUSE in C": http://www.maastaar.net/fuse/linux/filesystem/c/2016/05/21/writing-a-simple-filesystem-using-fuse/
- *
- * License: GNU GPL
- */
- 
 #define FUSE_USE_VERSION 30
 
 #include <fuse.h>
@@ -18,21 +8,25 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include <inttypes.h>
+#include <linux/limits.h>
+
+struct entry {
+	char *name;
+	off_t start;
+	off_t size;
+};
+
+struct entry *entries;
+int entries_len;
+// properties of the file in fake FS
+char *filename;
+off_t filelen;
+struct stat stat;
+
 static int do_getattr( const char *path, struct stat *st )
 {
-	printf( "[getattr] Called\n" );
-	printf( "\tAttributes of %s requested\n", path );
-	
-	// GNU's definitions of the attributes (http://www.gnu.org/software/libc/manual/html_node/Attribute-Meanings.html):
-	// 		st_uid: 	The user ID of the file’s owner.
-	//		st_gid: 	The group ID of the file.
-	//		st_atime: 	This is the last access time for the file.
-	//		st_mtime: 	This is the time of the last modification to the contents of the file.
-	//		st_mode: 	Specifies the mode of the file. This includes file type information (see Testing File Type) and the file permission bits (see Permission Bits).
-	//		st_nlink: 	The number of hard links to the file. This count keeps track of how many directories have entries for this file. If the count is ever decremented to zero, then the file itself is discarded as soon 
-	//						as no process still holds it open. Symbolic links are not counted in the total.
-	//		st_size:	This specifies the size of a regular file in bytes. For files that are really devices this field isn’t usually meaningful. For symbolic links this specifies the length of the file name the link refers to.
-	
+	//printf("getattr [%s]\n", path);
 	st->st_uid = getuid(); // The owner of the file/directory is the user who mounted the filesystem
 	st->st_gid = getgid(); // The group of the file/directory is the same as the group of the user who mounted the filesystem
 	st->st_atime = time( NULL ); // The last "a"ccess of the file/directory is right now
@@ -45,40 +39,77 @@ static int do_getattr( const char *path, struct stat *st )
 	}
 	else
 	{
-		st->st_mode = S_IFREG | 0644;
+		st->st_mode = S_IFREG | 0444;
 		st->st_nlink = 1;
-		st->st_size = 1024;
+		st->st_size = filelen;
 	}
-	
 	return 0;
 }
 
 static int do_readdir( const char *path, void *buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi )
 {
-	printf( "--> Getting The List of Files of %s\n", path );
-	
 	filler( buffer, ".", NULL, 0 ); // Current Directory
 	filler( buffer, "..", NULL, 0 ); // Parent Directory
 	
 	if ( strcmp( path, "/" ) == 0 ) // If the user is trying to show the files/directories of the root directory show the following
 	{
-		filler( buffer, "file54", NULL, 0 );
-		filler( buffer, "file349", NULL, 0 );
+		filler( buffer, "archive.cat", NULL, 0 );
 	}
 	
 	return 0;
 }
 
+int BinarySearch(struct entry *array, int number_of_elements, off_t key) {
+	int low = 0, high = number_of_elements-1, mid;
+	int iter =0;
+	while(low < high) {
+		iter++;
+		mid = (low + high)/2;
+		if(mid==low) mid++;
+		if(array[mid].start < key) low = mid;
+		else if(array[mid].start > key) high = mid-1;
+		//printf("%d %d %d\n", iter, low, high);
+		if(iter==number_of_elements) return mid;
+	}
+	return low;
+}
+
 static int do_read( const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi )
 {
-	printf( "--> Trying to read %s, %u, %u\n", path, offset, size );
+	memset(buffer, 0, size);
+	//printf( "--> Trying to read %s, %u, %u\n", path, offset, size );
+	size_t bytes_written=0;
+	size_t bytes_left=size;
+	if(offset>filelen) offset=filelen;
+	if(bytes_left+offset>filelen) bytes_left=filelen-offset;
+	//printf( "--> Trying to read %s, %u, %u\n", path, offset, bytes_left );
+	int i=BinarySearch(entries, entries_len, offset);
+	//printf( "start entry %d\n", i);
 	
-	char file54Text[] = "Hello World From File54!";
-	char file349Text[] = "Hello World From File349!";
-	char *selectedText = NULL;
+	while(bytes_left>0 && i<entries_len) {
+		off_t pos_in_file=offset-entries[i].start;
+		//printf( "entry %d, %d\n", i, pos_in_file);
+		int fd = open(entries[i].name, O_RDONLY);
+		// TODO: cache fd
+		if (fd == -1) return -1;
+		//printf( "reading %d bytes starting at %d to %d \n", bytes_left, pos_in_file, bytes_written);
+		int res = pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
+		close(fd);
+		if (res == -1) return -1;
+		//printf( "read %d\n", res);
+		bytes_written += entries[i].size;
+		offset += entries[i].size;
+		bytes_left -= entries[i].size;
+		//printf( "%d bytes written, offset=%d, %d bytes left\n", bytes_written, offset, bytes_left);
+		//printf( "uoutput: [%s]\n", buffer);
+		i++;
+	}
+	return bytes_written;
+
 	
 	// ... //
 	
+	/*
 	if ( strcmp( path, "/file54" ) == 0 )
 		selectedText = file54Text;
 	else if ( strcmp( path, "/file349" ) == 0 )
@@ -91,6 +122,7 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
 	memcpy( buffer, selectedText + offset, size );
 		
 	return strlen( selectedText ) - offset;
+	*/
 }
 
 static struct fuse_operations operations = {
@@ -101,5 +133,44 @@ static struct fuse_operations operations = {
 
 int main( int argc, char *argv[] )
 {
-	return fuse_main( argc, argv, &operations, NULL );
+	char line[PATH_MAX];
+	FILE *fr = fopen (argv[1], "rt");  /* open the file for reading */
+	int i=0;
+	while(fgets(line, PATH_MAX, fr) != NULL) {
+		i++;
+	}
+	entries_len = i;
+	entries = malloc(sizeof(struct entry) * entries_len);
+	rewind(fr);
+	i=0;
+	off_t filepos=0;
+	while(fgets(line, sizeof line, fr) != NULL) {
+		size_t len = strlen(line);
+		if (len > 0 && line[len-1] == '\n') {
+			line[--len] = '\0';
+		}
+		sscanf (line, "%" SCNd64, &(entries[i].size));
+		entries[i].start=filepos;
+		filepos=entries[i].start+entries[i].size;
+		char *name = line;
+		while (*name != ' ') name++;
+		name++;
+		entries[i].name = malloc(strlen(name)+1);
+		strcpy(entries[i].name, name);
+		i++;
+	}
+	filelen=filepos;
+	fclose(fr);  /* close the file prior to exiting the routine */
+	return fuse_main( argc-1, argv+1, &operations, NULL );
+	/*
+	off_t value;
+	sscanf (argv[2], "%" SCNd64, &(value));
+	int ret=BinarySearch(entries, entries_len, value);
+	printf("%" PRId64 "\n", value);
+	printf("%d\n", ret);
+	i=ret;
+	printf ("[%s] [%" PRId64 "][%" PRId64 "]\n", entries[i].name, entries[i].size, entries[i].start);
+	i++;
+	printf ("[%s] [%" PRId64 "][%" PRId64 "]\n", entries[i].name, entries[i].size, entries[i].start);
+	*/
 }
