@@ -22,7 +22,7 @@ int entries_len;
 // properties of the file in fake FS
 char *filename;
 off_t filelen;
-struct stat stat;
+//struct stat stat;
 
 static int do_getattr( const char *path, struct stat *st )
 {
@@ -74,12 +74,17 @@ int BinarySearch(struct entry *array, int number_of_elements, off_t key) {
 	return low;
 }
 
+off_t min(off_t a, off_t b) {
+	if(a<b) return a;
+	return b;
+}
+
 static int do_read( const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi )
 {
 	memset(buffer, 0, size);
 	//printf( "--> Trying to read %s, %u, %u\n", path, offset, size );
-	size_t bytes_written=0;
-	size_t bytes_left=size;
+	off_t bytes_written=0;
+	off_t bytes_left=size;
 	if(offset>filelen) offset=filelen;
 	if(bytes_left+offset>filelen) bytes_left=filelen-offset;
 	//printf( "--> Trying to read %s, %u, %u\n", path, offset, bytes_left );
@@ -91,38 +96,24 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
 		//printf( "entry %d, %d\n", i, pos_in_file);
 		int fd = open(entries[i].name, O_RDONLY);
 		// TODO: cache fd
-		if (fd == -1) return -1;
-		//printf( "reading %d bytes starting at %d to %d \n", bytes_left, pos_in_file, bytes_written);
-		int res = pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
-		close(fd);
-		if (res == -1) return -1;
-		//printf( "read %d\n", res);
-		bytes_written += entries[i].size;
-		offset += entries[i].size;
-		bytes_left -= entries[i].size;
-		//printf( "%d bytes written, offset=%d, %d bytes left\n", bytes_written, offset, bytes_left);
+		if (fd != -1) {
+			//printf( "reading %u bytes starting at %u to %u \n", bytes_left, pos_in_file, bytes_written);
+			pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
+			close(fd);
+		//} else {
+			// NOTE: even if we didn't actually read the file,
+			// we still consider it "ok" result
+			// (relevant part in buffer will be zero-filled)
+		}
+		off_t this_result = min(entries[i].size-pos_in_file, bytes_left);
+		bytes_written += this_result;
+		offset += this_result;
+		bytes_left -= this_result;
+		//printf( "%u bytes written, offset=%u, %u bytes left\n", bytes_written, offset, bytes_left);
 		//printf( "uoutput: [%s]\n", buffer);
 		i++;
 	}
 	return bytes_written;
-
-	
-	// ... //
-	
-	/*
-	if ( strcmp( path, "/file54" ) == 0 )
-		selectedText = file54Text;
-	else if ( strcmp( path, "/file349" ) == 0 )
-		selectedText = file349Text;
-	else
-		return -1;
-	
-	// ... //
-	
-	memcpy( buffer, selectedText + offset, size );
-		
-	return strlen( selectedText ) - offset;
-	*/
 }
 
 static struct fuse_operations operations = {
@@ -134,7 +125,7 @@ static struct fuse_operations operations = {
 int main( int argc, char *argv[] )
 {
 	char line[PATH_MAX];
-	FILE *fr = fopen (argv[1], "rt");  /* open the file for reading */
+	FILE *fr = fopen (argv[1], "rt");
 	int i=0;
 	while(fgets(line, PATH_MAX, fr) != NULL) {
 		i++;
