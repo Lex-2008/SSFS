@@ -20,6 +20,11 @@ Usage
 
 		./catfs {list file} {mount point}
 
+	You will see `{mount point}/archive.cat` file.
+	It should be identical to the one produced by this command:
+
+		find . -type f -print0 | xargs -0 cat >{reference file}
+
 * To unmount:
 
 		fusermount -u {mount point}
