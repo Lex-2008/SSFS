@@ -19,10 +19,15 @@ struct entry {
 
 struct entry *entries;
 int entries_len;
+// fd cache
+int fd;
+int fd_i=-1;
+// fs block size-1
+//off_t block_size_1=511;
 // properties of the file in fake FS
 char *filename;
 off_t filelen;
-//struct stat stat;
+struct stat filestat;
 
 static int do_getattr( const char *path, struct stat *st )
 {
@@ -94,13 +99,14 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
 	while(bytes_left>0 && i<entries_len) {
 		off_t pos_in_file=offset-entries[i].start;
 		//printf( "entry %d, %d\n", i, pos_in_file);
-		int fd = open(entries[i].name, O_RDONLY);
-		// TODO: cache fd
+		if(fd_i!=i) {
+			if (fd != -1) close(fd);
+			fd = open(entries[i].name, O_RDONLY);
+			fd_i=i;
+		}
 		if (fd != -1) {
 			//printf( "reading %u bytes starting at %u to %u \n", bytes_left, pos_in_file, bytes_written);
 			pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
-			close(fd);
-		//} else {
 			// NOTE: even if we didn't actually read the file,
 			// we still consider it "ok" result
 			// (relevant part in buffer will be zero-filled)
@@ -141,6 +147,12 @@ int main( int argc, char *argv[] )
 			line[--len] = '\0';
 		}
 		sscanf (line, "%" SCNd64, &(entries[i].size));
+		// round up to x*512
+		// http://stackoverflow.com/questions/2022179/c-quick-calculation-of-next-multiple-of-4
+		//off_t old=entries[i].size;
+		//entries[i].size = (entries[i].size + block_size_1) & ~block_size_1;
+		//int blk=entries[i].size/512;
+		//printf("old [%" PRId64 "], new [%" PRId64 "], blk [%d], new [%d]\n", old, entries[i].size, blk, blk*512);
 		entries[i].start=filepos;
 		filepos=entries[i].start+entries[i].size;
 		char *name = line;
@@ -151,17 +163,6 @@ int main( int argc, char *argv[] )
 		i++;
 	}
 	filelen=filepos;
-	fclose(fr);  /* close the file prior to exiting the routine */
+	fclose(fr);
 	return fuse_main( argc-1, argv+1, &operations, NULL );
-	/*
-	off_t value;
-	sscanf (argv[2], "%" SCNd64, &(value));
-	int ret=BinarySearch(entries, entries_len, value);
-	printf("%" PRId64 "\n", value);
-	printf("%d\n", ret);
-	i=ret;
-	printf ("[%s] [%" PRId64 "][%" PRId64 "]\n", entries[i].name, entries[i].size, entries[i].start);
-	i++;
-	printf ("[%s] [%" PRId64 "][%" PRId64 "]\n", entries[i].name, entries[i].size, entries[i].start);
-	*/
 }
