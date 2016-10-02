@@ -19,7 +19,7 @@ Usage
 
 * To mount, from the same directory:
 	
-		./catfs {list file} {mount point}
+		./catfs -s {list file} {mount point}
 	
 	You will see `{mount point}/archive.cat` file.
 	It should be identical to the one produced by this command:
@@ -49,7 +49,7 @@ or:
 
 	cd backup/
 	find . -type f -printf "%s %P\n" >cat.fs
-	mkdir mount && ~/catfs cat.fs mount
+	mkdir mount && ~/catfs -s cat.fs mount
 	par2create -r1 -n1 par2 mount/archive.cat
 	fusermount -u mount && rmdir mount
 
@@ -74,7 +74,7 @@ In case of damage to any file (say, `important/data.txt`),
 you can recover it this way:
 
 	cd backup/
-	mkdir mount && ~/catfs cat.fs mount
+	mkdir mount && ~/catfs -s cat.fs mount
 	cp mount/archive.cat archive.cat
 	fusermount -u mount && rmdir mount
 	par2recover par2 archive.cat

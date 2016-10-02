@@ -10,6 +10,8 @@
 
 #include <inttypes.h>
 #include <linux/limits.h>
+#include <errno.h>
+
 
 struct entry {
 	char *name;
@@ -20,10 +22,12 @@ struct entry {
 struct entry *entries;
 int entries_len;
 // fd cache
-int fd;
+int fd=-1;
 int fd_i=-1;
 // fs block size-1
 //off_t block_size_1=511;
+//pwd where the catfs was started from
+char *pwd;
 // properties of the file in fake FS
 char *filename;
 off_t filelen;
@@ -98,15 +102,18 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
 	
 	while(bytes_left>0 && i<entries_len) {
 		off_t pos_in_file=offset-entries[i].start;
-		//printf( "entry %d, %d\n", i, pos_in_file);
+		//printf( "entry %d, %d, %s\n", i, pos_in_file, entries[i].name);
 		if(fd_i!=i) {
 			if (fd != -1) close(fd);
+			//printf("opening\n");
 			fd = open(entries[i].name, O_RDONLY);
+			//if (fd==-1) printf("errno=%d\n",errno);
 			fd_i=i;
 		}
 		if (fd != -1) {
 			//printf( "reading %u bytes starting at %u to %u \n", bytes_left, pos_in_file, bytes_written);
-			pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
+			int res=pread(fd, buffer+bytes_written, bytes_left, pos_in_file);
+			//printf( "read %u bytes\n", res);
 			// NOTE: even if we didn't actually read the file,
 			// we still consider it "ok" result
 			// (relevant part in buffer will be zero-filled)
@@ -140,12 +147,34 @@ void usage(char *name) {
 	,name, "%s");
 }
 
+
+//from rofs-filtered
+static char* concat_path(const char* p1, const char* p2) {
+	size_t p1len = strlen(p1);
+	size_t p2len = strlen(p2);
+	// Need room for path separator and null terminator
+	char *path = malloc(p1len + p2len + 2);
+	if (!path) return NULL;
+	strcpy(path, p1);
+	if ((path[p1len - 1] != '/') && (p2[0] != '/')) {
+		// Add a "/" if neither p1 nor p2 has it.
+		strcat(path, "/");
+	} else if (path[p1len - 1] == '/') {
+		// If p1 ends in '/', we don't need it from p2
+		while (p2[0] == '/') p2++;
+	}
+	strcat(path, p2);
+	return path;
+}
+
 int main( int argc, char *argv[] ) {
 	if(argc<2) {
 		usage(argv[0]);
 		return;
 	}
 	char line[PATH_MAX];
+	pwd=get_current_dir_name();
+	//printf("Current working dir: %s\n", pwd);
 	FILE *fr = fopen (argv[1], "rt");
 	if(fr == NULL) {
 		usage(argv[0]);
@@ -177,8 +206,14 @@ int main( int argc, char *argv[] ) {
 		char *name = line;
 		while (*name != ' ') name++;
 		name++;
-		entries[i].name = malloc(strlen(name)+1);
-		strcpy(entries[i].name, name);
+		if(name[0]=='/') {
+			entries[i].name = malloc(strlen(name)+1);
+			strcpy(entries[i].name, name);
+			//printf("direct copy absolute filename: [%s]\n", entries[i].name);
+		} else {
+			entries[i].name = concat_path(pwd, name);
+			//printf("relative filename: [%s]\n", entries[i].name);
+		}
 		i++;
 	}
 	filelen=filepos;
