@@ -10,6 +10,15 @@ in that it is optimised for working with a big list of files.
 Primary purpose is to make [par](https://en.wikipedia.org/wiki/Parchive)
 work with many files at once (by making par think that it's only one file).
 
+Compile
+-------
+
+* To compile on Ubuntu 16.04, install these packages:
+		sudo apt install libfuse-dev make gcc pkgconf cpulimit
+
+* After that, follow usual way:
+		make
+
 Usage
 -----
 
