@@ -1,0 +1,9 @@
+language: c
+
+addons:
+   apt:
+      packages:
+         - libfuse-dev
+           #- pkgconf
+
+script: make
