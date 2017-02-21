@@ -14,9 +14,11 @@ Compile
 -------
 
 * To compile on Ubuntu 16.04, install these packages:
-		sudo apt install libfuse-dev make gcc pkgconf cpulimit
+
+		sudo apt install libfuse-dev make gcc pkgconf
 
 * After that, follow usual way:
+
 		make
 
 Usage
